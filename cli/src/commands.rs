@@ -153,13 +153,18 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
         "select" => {
             let sel = rest.get(0).ok_or_else(|| ParseError::MissingArguments {
                 context: "select".to_string(),
-                usage: "select <selector> <value>",
+                usage: "select <selector> <value...>",
             })?;
             let _val = rest.get(1).ok_or_else(|| ParseError::MissingArguments {
                 context: "select".to_string(),
-                usage: "select <selector> <value>",
+                usage: "select <selector> <value...>",
             })?;
-            Ok(json!({ "id": id, "action": "select", "selector": sel, "values": rest[1..].join(" ") }))
+            let values = &rest[1..];
+            if values.len() == 1 {
+                Ok(json!({ "id": id, "action": "select", "selector": sel, "values": values[0] }))
+            } else {
+                Ok(json!({ "id": id, "action": "select", "selector": sel, "values": values }))
+            }
         }
         "drag" => {
             let src = rest.get(0).ok_or_else(|| ParseError::MissingArguments {
@@ -1151,6 +1156,18 @@ mod tests {
         assert_eq!(cmd["action"], "select");
         assert_eq!(cmd["selector"], "#menu");
         assert_eq!(cmd["values"], "option1");
+    }
+
+    #[test]
+    fn test_select_multiple_values() {
+        let cmd = parse_command(
+            &args("select #menu opt1 opt2 opt3"),
+            &default_flags(),
+        )
+        .unwrap();
+        assert_eq!(cmd["action"], "select");
+        assert_eq!(cmd["selector"], "#menu");
+        assert_eq!(cmd["values"], json!(["opt1", "opt2", "opt3"]));
     }
 
     #[test]
