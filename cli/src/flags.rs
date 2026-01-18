@@ -8,9 +8,17 @@ pub struct Flags {
     pub session: String,
     pub headers: Option<String>,
     pub executable_path: Option<String>,
+    pub cdp: Option<String>,
+    pub extensions: Vec<String>,
+    pub proxy: Option<String>,
 }
 
 pub fn parse_flags(args: &[String]) -> Flags {
+    let extensions_env = env::var("AGENT_BROWSER_EXTENSIONS")
+        .ok()
+        .map(|s| s.split(',').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect::<Vec<_>>())
+        .unwrap_or_default();
+
     let mut flags = Flags {
         json: false,
         full: false,
@@ -19,6 +27,9 @@ pub fn parse_flags(args: &[String]) -> Flags {
         session: env::var("AGENT_BROWSER_SESSION").unwrap_or_else(|_| "default".to_string()),
         headers: None,
         executable_path: env::var("AGENT_BROWSER_EXECUTABLE_PATH").ok(),
+        cdp: None,
+        extensions: extensions_env,
+        proxy: None,
     };
 
     let mut i = 0;
@@ -45,6 +56,24 @@ pub fn parse_flags(args: &[String]) -> Flags {
                     flags.executable_path = Some(s.clone());
                     i += 1;
                 }
+            },
+            "--extension" => {
+                if let Some(s) = args.get(i + 1) {
+                    flags.extensions.push(s.clone());
+                    i += 1;
+                }
+            },
+            "--cdp" => {
+                if let Some(s) = args.get(i + 1) {
+                    flags.cdp = Some(s.clone());
+                    i += 1;
+                }
+            }
+            "--proxy" => {
+                if let Some(p) = args.get(i + 1) {
+                    flags.proxy = Some(p.clone());
+                    i += 1;
+                }
             }
             _ => {}
         }
@@ -60,7 +89,7 @@ pub fn clean_args(args: &[String]) -> Vec<String> {
     // Global flags that should be stripped from command args
     const GLOBAL_FLAGS: &[&str] = &["--json", "--full", "--headed", "--debug"];
     // Global flags that take a value (need to skip the next arg too)
-    const GLOBAL_FLAGS_WITH_VALUE: &[&str] = &["--session", "--headers", "--executable-path"];
+    const GLOBAL_FLAGS_WITH_VALUE: &[&str] = &["--session", "--headers", "--executable-path", "--cdp", "--extension", "--proxy"];
 
     for arg in args.iter() {
         if skip_next {
