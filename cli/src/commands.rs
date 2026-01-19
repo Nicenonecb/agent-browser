@@ -75,7 +75,12 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
                 context: cmd.to_string(),
                 usage: "open <url>",
             })?;
-            let url = if url.starts_with("http") {
+            let url_lower = url.to_lowercase();
+            let url = if url_lower.starts_with("http://") 
+                || url_lower.starts_with("https://")
+                || url_lower.starts_with("about:") 
+                || url_lower.starts_with("data:") 
+                || url_lower.starts_with("file:") {
                 url.to_string()
             } else {
                 format!("https://{}", url)
@@ -332,6 +337,19 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
         // === Close ===
         "close" | "quit" | "exit" => Ok(json!({ "id": id, "action": "close" })),
 
+        // === Connect (CDP) ===
+        "connect" => {
+            let port_str = rest.get(0).ok_or_else(|| ParseError::MissingArguments {
+                context: "connect".to_string(),
+                usage: "connect <port>",
+            })?;
+            let port: u16 = port_str.parse().map_err(|_| ParseError::MissingArguments {
+                context: format!("connect: invalid port '{}'", port_str),
+                usage: "connect <port>",
+            })?;
+            Ok(json!({ "id": id, "action": "launch", "cdpPort": port }))
+        }
+
         // === Get ===
         "get" => parse_get(&rest, &id),
 
@@ -385,7 +403,11 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
                 }
                 Some("list") => Ok(json!({ "id": id, "action": "tab_list" })),
                 Some("close") => {
-                    Ok(json!({ "id": id, "action": "tab_close", "index": rest.get(1).and_then(|s| s.parse::<i32>().ok()) }))
+                    let mut cmd = json!({ "id": id, "action": "tab_close" });
+                    if let Some(index) = rest.get(1).and_then(|s| s.parse::<i32>().ok()) {
+                        cmd["index"] = json!(index);
+                    }
+                    Ok(cmd)
                 }
                 Some(n) if n.parse::<i32>().is_ok() => {
                     Ok(json!({ "id": id, "action": "tab_switch", "index": n.parse::<i32>().unwrap() }))
@@ -428,7 +450,11 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
             const VALID: &[&str] = &["accept", "dismiss"];
             match rest.get(0).map(|s| *s) {
                 Some("accept") => {
-                    Ok(json!({ "id": id, "action": "dialog", "response": "accept", "promptText": rest.get(1) }))
+                    let mut cmd = json!({ "id": id, "action": "dialog", "response": "accept" });
+                    if let Some(prompt_text) = rest.get(1) {
+                        cmd["promptText"] = json!(prompt_text);
+                    }
+                    Ok(cmd)
                 }
                 Some("dismiss") => Ok(json!({ "id": id, "action": "dialog", "response": "dismiss" })),
                 Some(sub) => Err(ParseError::UnknownSubcommand {
@@ -446,8 +472,14 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
         "trace" => {
             const VALID: &[&str] = &["start", "stop"];
             match rest.get(0).map(|s| *s) {
-                Some("start") => Ok(json!({ "id": id, "action": "trace_start", "path": rest.get(1) })),
-                Some("stop") => Ok(json!({ "id": id, "action": "trace_stop", "path": rest.get(1) })),
+                Some("start") => Ok(json!({ "id": id, "action": "trace_start" })),
+                Some("stop") => {
+                    let path = rest.get(1).ok_or_else(|| ParseError::MissingArguments {
+                        context: "trace stop".to_string(),
+                        usage: "trace stop <path>",
+                    })?;
+                    Ok(json!({ "id": id, "action": "trace_stop", "path": path }))
+                },
                 Some(sub) => Err(ParseError::UnknownSubcommand {
                     subcommand: sub.to_string(),
                     valid_options: VALID,
@@ -934,12 +966,22 @@ fn parse_network(rest: &[&str], id: &str) -> Result<Value, ParseError> {
             let body = body_idx.and_then(|i| rest.get(i + 1).map(|s| *s));
             Ok(json!({ "id": id, "action": "route", "url": url, "abort": abort, "body": body }))
         }
-        Some("unroute") => Ok(json!({ "id": id, "action": "unroute", "url": rest.get(1) })),
+        Some("unroute") => {
+            let mut cmd = json!({ "id": id, "action": "unroute" });
+            if let Some(url) = rest.get(1) {
+                cmd["url"] = json!(url);
+            }
+            Ok(cmd)
+        },
         Some("requests") => {
             let clear = rest.iter().any(|&s| s == "--clear");
             let filter_idx = rest.iter().position(|&s| s == "--filter");
             let filter = filter_idx.and_then(|i| rest.get(i + 1).map(|s| *s));
-            Ok(json!({ "id": id, "action": "requests", "clear": clear, "filter": filter }))
+            let mut cmd = json!({ "id": id, "action": "requests", "clear": clear });
+            if let Some(f) = filter {
+                cmd["filter"] = json!(f);
+            }
+            Ok(cmd)
         }
         Some(sub) => Err(ParseError::UnknownSubcommand {
             subcommand: sub.to_string(),

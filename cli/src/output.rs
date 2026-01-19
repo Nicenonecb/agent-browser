@@ -118,6 +118,27 @@ pub fn print_response(resp: &Response, json_mode: bool) {
             }
             return;
         }
+        // Network requests
+        if let Some(requests) = data.get("requests").and_then(|v| v.as_array()) {
+            if requests.is_empty() {
+                println!("No requests captured");
+            } else {
+                for req in requests {
+                    let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("GET");
+                    let url = req.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                    let resource_type = req.get("resourceType").and_then(|v| v.as_str()).unwrap_or("");
+                    println!("{} {} ({})", method, url, resource_type);
+                }
+            }
+            return;
+        }
+        // Cleared requests
+        if let Some(cleared) = data.get("cleared").and_then(|v| v.as_bool()) {
+            if cleared {
+                println!("\x1b[32m✓\x1b[0m Request log cleared");
+                return;
+            }
+        }
         // Bounding box
         if let Some(box_data) = data.get("box") {
             println!(
@@ -1240,6 +1261,7 @@ Core Commands:
   pdf <path>                 Save as PDF
   snapshot                   Accessibility tree with refs (for AI)
   eval <js>                  Run JavaScript
+  connect <port>             Connect to browser via CDP (e.g., connect 9222)
   close                      Close browser
 
 Navigation:
